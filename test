@@ -1,1 +1,30 @@
-It Worked!
+// Id tracking interface
+function setId(id) {
+  gl.uniform4iv(u_id, id % 256, 0, 0, 0)
+}
+function getId(x, y) {
+  var color = gl.getColor(texture, x, y)
+  return color.r + color.g * 256 + ... + ...
+}
+
+var lastId = 0;
+function newFrame() {
+  lastId = 0;
+}
+function nextId() {
+  lastId += 1;
+  setId(lastId);
+  return lastId;
+}
+function ignoreId() {
+  gl.uniform4iv(u_id, 0, 0, 0, 0)
+}
+
+// Controller interface
+addController(o) where o implements update(elapsed) and/or draw2d(canvas) and/or draw3d(webgl)
+removeController(o)
+setTimelineController(T) where T implements getTime() and returns t
+
+// State altering functions
+setCamera(cameraMatrix)
+setView({ ... })
