@@ -3,11 +3,9 @@
 var VSHADER_SOURCE =
   'attribute vec4 a_Position;\n' +
   'varying vec4 v_Position;\n' +
-  'varying vec4 v_Magic;\n' +
   'uniform mat4 u_ModelMatrix;\n' +
   'void main() {\n' +
   '  gl_Position = u_ModelMatrix * a_Position;\n' +
-  '  v_Magic = u_ModelMatrix * a_Position;\n' +
   '  v_Position = a_Position;\n' +
   '}\n';
 
@@ -17,15 +15,16 @@ var FSHADER_SOURCE =
   'precision mediump float;\n' +
   '#endif GL_ES\n' +
   'varying vec4 v_Position;\n' +
-  'varying vec4 v_Magic;\n' +
   'uniform bool u_Clicked;\n' +
+  'uniform vec4 u_Id;\n' +
   'void main() {\n' +
-  '  if(u_Clicked) gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n' +
+  '  if(u_Clicked) gl_FragColor = u_Id;\n' +
   '  else gl_FragColor = v_Position;\n' +
   '}\n';
 
 // Rotation angle (degrees/second)
 var ANGLE_STEP = 180.0;
+var u_Id;
 
 function main() {
   // Retrieve <canvas> element
@@ -49,6 +48,7 @@ function main() {
   
   //totally works
   var u_Clicked = gl.getUniformLocation(gl.program, 'u_Clicked');
+  u_Id = gl.getUniformLocation(gl.program, 'u_Id');
   
   gl.uniform1i(u_Clicked,0);
 
@@ -82,32 +82,45 @@ function main() {
 		 // Check if it is on object
 		 var x_in_canvas = x - rect.left, y_in_canvas = rect.bottom - y;
 		 var picked = check(gl, n, x_in_canvas, y_in_canvas, currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
-		 if (picked) alert('The cube was selected! ');
+		 if (picked[0] == 255) alert('The cube1 was selected! ');
+		 else if (picked[1] == 255) alert('The cube2 was selected! ');
 	 }
   }
+  
 
   // Start drawing
   var tick = function() {
     currentAngle = animate(currentAngle);  // Update the rotation angle
-    draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw the triangle
+    drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix);
     requestAnimationFrame(tick, canvas); // Request that the browser calls tick
   };
   tick();
 }
 
+function drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix){
+    modelMatrix.setIdentity();
+    modelMatrix.scale(0.5,0.5,0.5);
+    modelMatrix.translate(-0.5,0,0);
+    // Clear <canvas>
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+	 gl.uniform4f(u_Id,1,0,0,1);
+    draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw the triangle
+    modelMatrix.translate(1,0,0);
+	 gl.uniform4f(u_Id,0,1,0,1);
+    draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw the triangle
+	
+}
+
  function check(gl, n, x, y, currentAngle, u_Clicked, viewProjMatrix, u_MvpMatrix) {
 	 var picked = false;
 	 gl.uniform1i(u_Clicked, 1); // Draw the cube with red
-	 draw(gl, n, currentAngle, viewProjMatrix, u_MvpMatrix);
+	 drawCubes(gl, n, currentAngle, viewProjMatrix, u_MvpMatrix);
 	 // Read pixel at the clicked position
 	 var pixels = new Uint8Array(4); // Array for storing the pixels
 	 gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-	 if (pixels[0] == 255)
-	 // The mouse in on cube if pixels[0] is 255
-	 picked = true;
 	 gl.uniform1i(u_Clicked, 0); // Pass false to u_Clicked: redraw cube
 	 draw(gl, n, currentAngle, viewProjMatrix, u_MvpMatrix); 
-	 return picked;
+	 return pixels;
  }
 
 function initVertexBuffers(gl) {
@@ -153,18 +166,19 @@ function initVertexBuffers(gl) {
 }
 
 function draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
+	var transformMat = new Matrix4(modelMatrix);
   // Set the rotation matrix
-  modelMatrix.setRotate(currentAngle, Math.cos(currentAngle/50), 1, Math.sin(currentAngle/100)); // Rotation angle, rotation axis (0, 0, 1)
+  //modelMatrix.rotate(currentAngle, Math.cos(currentAngle/50), 1, Math.sin(currentAngle/100)); // Rotation angle, rotation axis (0, 0, 1)
+  transformMat.rotate(currentAngle, Math.cos(currentAngle/50), 1, Math.sin(currentAngle/100)); // Rotation angle, rotation axis (0, 0, 1)
   //modelMatrix.setRotate(-90,1,0,0)
   
   //translate matrix
-  modelMatrix.translate(-0.5,-0.5,-0.5);
+  //modelMatrix.translate(-0.5,-0.5,-0.5);
+  transformMat.translate(-0.5,-0.5,-0.5);
   
   // Pass the rotation matrix to the vertex shader
-  gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-
-  // Clear <canvas>
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  //gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+  gl.uniformMatrix4fv(u_ModelMatrix, false, transformMat.elements);
 	
   // Draw the rectangle
   gl.drawArrays(gl.TRIANGLES, 0, n);
