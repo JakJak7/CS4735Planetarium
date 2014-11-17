@@ -1,6 +1,7 @@
 // RotatingTriangle.js (c) 2012 matsuda
 // Vertex shader program
 var VSHADER_SOURCE =
+  '#line 5\n' +
   'attribute vec4 a_Position;\n' +
   'varying vec4 v_Position;\n' +
   'uniform mat4 u_ModelMatrix;\n' +
@@ -11,6 +12,7 @@ var VSHADER_SOURCE =
 
 // Fragment shader program
 var FSHADER_SOURCE =
+  '#line 16\n' +
   '#ifdef GL_ES\n' +
   'precision mediump float;\n' +
   '#endif GL_ES\n' +
@@ -23,8 +25,10 @@ var FSHADER_SOURCE =
   '}\n';
 
 // Rotation angle (degrees/second)
-var ANGLE_STEP = 180.0;
+var ANGLE_STEP = 0.0;
 var u_Id;
+var latitude = 0, longitude = 0, radius = 2;
+Math.PI_2 = Math.PI/2;
 
 function main() {
   // Retrieve <canvas> element
@@ -75,18 +79,62 @@ function main() {
   // Model matrix
   var modelMatrix = new Matrix4();
   // Register event handler
-  canvas.onmousedown = function(ev) {
-    var x = ev.clientX, y = ev.clientY;
-	var rect = ev.target.getBoundingClientRect();
-	if (rect.left <= x && x < rect.right && rect.top <= y && y < rect.bottom) {
-		 // Check if it is on object
-		 var x_in_canvas = x - rect.left, y_in_canvas = rect.bottom - y;
-		 var picked = check(gl, n, x_in_canvas, y_in_canvas, currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
-		 if (picked[0] == 255) alert('The cube1 was selected! ');
-		 else if (picked[1] == 255) alert('The cube2 was selected! ');
-	 }
-  }
-  
+	var mouseDown = false, mouseMove = false, hasBreached = false;
+	var element = canvas;
+	var oldX, oldY;
+	element.addEventListener("mousedown", function(ev){
+		mouseDown = true;
+		mouseMove = false;
+		oldX = ev.pageX, oldY = ev.pageY;
+		//console.log(Xbefore+","+Ybefore);
+	}, false);
+	element.addEventListener("mousemove", function(ev){
+		var currentX = ev.clientX, currentY = ev.clientY;
+		var deltaX = currentX-oldX, deltaY = currentY-oldY;
+		var distMoved = Math.sqrt(Math.pow(deltaX,2)+Math.pow(deltaY,2));
+		if(mouseDown && distMoved > 5){
+			mouseMove = true;
+			hasBreached = true;
+		}
+		if(hasBreached){
+			console.log("move, "+Math.PI_2);
+			latitude+=deltaY/100;
+			
+			// stop the latitude from wrapping around
+			if(latitude>Math.PI_2){
+				latitude=Math.PI_2;
+			}
+			else if(latitude<-Math.PI_2){
+				latitude=-Math.PI_2;
+			}
+			longitude+=deltaX/100;
+			oldX = currentX;
+			oldY = currentY;
+		}
+		//var deltaX = ev.clientX-Xbefore, deltaY = ev.clientY-Ybefore;
+	}, false);
+	element.addEventListener("mouseup", function(ev){
+		mouseDown = false;
+		hasBreached = false;
+		if(!mouseMove){
+			console.log("click");
+			
+			var x = ev.clientX, y = ev.clientY;
+			//console.log("up at: "+x+","+y);
+			var rect = ev.target.getBoundingClientRect();
+			if (rect.left <= x && x < rect.right && rect.top <= y && y < rect.bottom) {
+				 // Check if it is on object
+				 var x_in_canvas = x - rect.left, y_in_canvas = rect.bottom - y;
+				 var picked = check(gl, n, x_in_canvas, y_in_canvas, currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
+				 if (picked[0] == 255) alert('The cube1 was selected! ');
+				 else if (picked[1] == 255) alert('The cube2 was selected! ');
+			 }
+		}
+		else if(mouseDown === 1){
+			console.log("drag");
+			//console.log("deltaX: "+deltaX+" Y: "+deltaY);
+		}
+	}, false);
 
   // Start drawing
   var tick = function() {
@@ -98,11 +146,19 @@ function main() {
 }
 
 function drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix){
-    modelMatrix.setIdentity();
+    //modelMatrix.setIdentity();
+    modelMatrix.setPerspective(90,1,0.5,500);  //-1,1,-1,1,0.5,500);
+    //modelMatrix.lookAt(1,0,1, 0,0,0 ,0,1,0);
+    var x = radius*Math.cos(latitude)*Math.cos(longitude);
+    var z = radius*Math.cos(latitude)*Math.sin(longitude);
+    var y = radius*Math.sin(latitude);
+    //console.log(x+", "+y+", "+z);
+    modelMatrix.lookAt(x,y,z,0,0,0 ,0,1,0);
+    
     modelMatrix.scale(0.5,0.5,0.5);
     modelMatrix.translate(-0.5,0,0);
     // Clear <canvas>
-    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 	 gl.uniform4f(u_Id,1,0,0,1);
     draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw the triangle
     modelMatrix.translate(1,0,0);
