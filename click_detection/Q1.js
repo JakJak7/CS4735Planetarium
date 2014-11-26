@@ -25,8 +25,10 @@ var FSHADER_SOURCE =
   '}\n';
 
 // Rotation angle (degrees/second)
-var ANGLE_STEP = 0.0;
+var ANGLE_STEP = 40.0;
 var u_Id;
+
+// Used to find camera position relative to gaze vector
 var latitude = 0, longitude = 0, radius = 2;
 Math.PI_2 = Math.PI/2;
 
@@ -97,7 +99,7 @@ function main() {
 			hasBreached = true;
 		}
 		if(hasBreached){
-			console.log("move, "+Math.PI_2);
+			//console.log("move, "+Math.PI_2);
 			latitude+=deltaY/100;
 			
 			// stop the latitude from wrapping around
@@ -117,7 +119,7 @@ function main() {
 		mouseDown = false;
 		hasBreached = false;
 		if(!mouseMove){
-			console.log("click");
+			//console.log("click");
 			
 			var x = ev.clientX, y = ev.clientY;
 			//console.log("up at: "+x+","+y);
@@ -126,8 +128,15 @@ function main() {
 				 // Check if it is on object
 				 var x_in_canvas = x - rect.left, y_in_canvas = rect.bottom - y;
 				 var picked = check(gl, n, x_in_canvas, y_in_canvas, currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
-				 if (picked[0] == 255) alert('The cube1 was selected! ');
-				 else if (picked[1] == 255) alert('The cube2 was selected! ');
+				 //var gazeVectorOld = new Float32Array(gazeVector); // backup the old gaze vector, used to transition the camera smoothly
+				 if (picked[0] == 255)
+					  targetGaze = new Float32Array(cube1Center);
+				 else if (picked[1] == 255) 
+					  targetGaze = new Float32Array(cube2Center);//alert('The cube2 was selected! ');
+				 else if (picked[2] == 255) 
+					  targetGaze = new Float32Array(cube3Center);
+				 else if (picked[2] == 128) 
+					  targetGaze = new Float32Array(cube4Center);
 			 }
 		}
 		else if(mouseDown === 1){
@@ -138,6 +147,7 @@ function main() {
 
   // Start drawing
   var tick = function() {
+	animateCamera(); // Smoothly transition camera
     currentAngle = animate(currentAngle);  // Update the rotation angle
     drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix);
     requestAnimationFrame(tick, canvas); // Request that the browser calls tick
@@ -145,26 +155,48 @@ function main() {
   tick();
 }
 
+var cube1Center = new Float32Array([-1,0,0]); //find way to dynamically find these! (I guess they're given anyways)
+var cube2Center = new Float32Array([1,0,0]);
+var cube3Center = new Float32Array([0,0,1]);
+var cube4Center = new Float32Array([0,0,-1]); // store these in a better way...
+var gazeVector = new Float32Array([0,0,0]);
+var targetGaze = new Float32Array(gazeVector);
 function drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix){
     //modelMatrix.setIdentity();
-    modelMatrix.setPerspective(90,1,0.5,500);  //-1,1,-1,1,0.5,500);
+    modelMatrix.setPerspective(90,1,0.5,500); //-1,1,-1,1,0.5,500);
     //modelMatrix.lookAt(1,0,1, 0,0,0 ,0,1,0);
-    var x = radius*Math.cos(latitude)*Math.cos(longitude);
-    var z = radius*Math.cos(latitude)*Math.sin(longitude);
-    var y = radius*Math.sin(latitude);
+    var x = radius*Math.cos(latitude)*Math.cos(longitude)+gazeVector[0];
+    var z = radius*Math.cos(latitude)*Math.sin(longitude)+gazeVector[2];
+    var y = radius*Math.sin(latitude)+gazeVector[1];
     //console.log(x+", "+y+", "+z);
-    modelMatrix.lookAt(x,y,z,0,0,0 ,0,1,0);
+    modelMatrix.lookAt(x,y,z,gazeVector[0],gazeVector[1],gazeVector[2] ,0,1,0);
     
-    modelMatrix.scale(0.5,0.5,0.5);
-    modelMatrix.translate(-0.5,0,0);
+    var modelMatrixChild = new Matrix4(modelMatrix);
+    modelMatrixChild.translate(cube1Center[0],cube1Center[1],cube1Center[2]);
+    modelMatrixChild.scale(0.5,0.5,0.5);
     // Clear <canvas>
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 	 gl.uniform4f(u_Id,1,0,0,1);
-    draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw the triangle
-    modelMatrix.translate(1,0,0);
+    draw(gl, n, currentAngle, modelMatrixChild, u_ModelMatrix);   // Draw the triangle
+    
+    modelMatrixChild = new Matrix4(modelMatrix);
+    modelMatrixChild.translate(cube2Center[0],cube2Center[1],cube2Center[2]);
+    modelMatrixChild.scale(0.5,0.5,0.5);
 	 gl.uniform4f(u_Id,0,1,0,1);
-    draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix);   // Draw the triangle
-	
+    draw(gl, n, currentAngle, modelMatrixChild, u_ModelMatrix);   // Draw the triangle
+    
+    
+    modelMatrixChild = new Matrix4(modelMatrix);
+    modelMatrixChild.translate(cube3Center[0],cube3Center[1],cube3Center[2]);
+    modelMatrixChild.scale(0.5,0.5,0.5);
+	 gl.uniform4f(u_Id,0,0,1,1);
+    draw(gl, n, currentAngle, modelMatrixChild, u_ModelMatrix);   // Draw the triangle
+    
+    modelMatrixChild = new Matrix4(modelMatrix);
+    modelMatrixChild.translate(cube4Center[0],cube4Center[1],cube4Center[2]);
+    modelMatrixChild.scale(0.5,0.5,0.5);
+	 gl.uniform4f(u_Id,0,0,0.5,1);
+    draw(gl, n, currentAngle, modelMatrixChild, u_ModelMatrix);   // Draw the triangle
 }
 
  function check(gl, n, x, y, currentAngle, u_Clicked, viewProjMatrix, u_MvpMatrix) {
@@ -250,4 +282,17 @@ function animate(angle) {
   // Update the current rotation angle (adjusted by the elapsed time)
   var newAngle = angle + (ANGLE_STEP * elapsed) / 1000.0;
   return newAngle %= 360;
+}
+
+function animateCamera(angle) {
+  // Calculate the elapsed time
+  var now = Date.now();
+  var elapsed = now - g_last;
+  //g_last = now; // don't update the last timestamp before animate() is called!
+  // Update the current rotation angle (adjusted by the elapsed time)
+  var speed = elapsed;
+  //console.log(elapsed);
+  gazeVector[0] += (targetGaze[0]-gazeVector[0])*(speed/1000);
+  gazeVector[1] += (targetGaze[1]-gazeVector[1])*(speed/1000);
+  gazeVector[2] += (targetGaze[2]-gazeVector[2])*(speed/1000);
 }
