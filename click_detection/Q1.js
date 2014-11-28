@@ -144,6 +144,26 @@ function main() {
 			//console.log("deltaX: "+deltaX+" Y: "+deltaY);
 		}
 	}, false);
+	
+	// WASD free-cam (but only in the XZ plane
+	element,onkeypress = function(ev){
+		var key = String.fromCharCode(ev.charCode);
+		switch(key){
+		  case 'w':
+			//console.log("w pressed!");
+			targetGaze[2]-= 0.1
+			break;
+		  case 's':
+			targetGaze[2]+= 0.1
+			break;
+		  case 'a':
+			targetGaze[0]-= 0.1
+			break;
+		  case 'd':
+			targetGaze[0]+= 0.1
+			break;
+		}
+  };
 
   // Start drawing
   var tick = function() {
