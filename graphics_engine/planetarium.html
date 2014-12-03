@@ -1,0 +1,422 @@
+<html>
+
+<head>
+  <title>Planetarium</title>
+  
+  <script id="shader-vs-passthrough" type="x-shader/x-vertex">
+#line 8
+attribute vec3 a_Position;
+uniform mat4 u_PMatrix;
+uniform mat4 u_MVMatrix;
+void main(void) {
+  gl_Position = u_PMatrix * u_MVMatrix * vec4(a_Position, 1.0);
+}
+</script>
+  <script id="shader-vs-tex-norm" type="x-shader/x-vertex">
+#line 17
+attribute vec3 a_Position;
+attribute vec3 a_Normal;
+attribute vec2 a_TexCoord;
+uniform mat4 u_PMatrix;
+uniform mat4 u_MVMatrix;
+uniform mat3 u_NMatrix;
+varying vec3 v_Position;
+varying vec3 v_Normal;
+varying vec2 v_TexCoord;
+void main() {
+  gl_Position = u_PMatrix * u_MVMatrix * vec4(a_Position, 1.0);
+  v_Position = (u_MVMatrix * vec4(a_Position, 1.0)).xyz;
+  v_Normal = u_NMatrix * a_Normal;
+  v_TexCoord = a_TexCoord;
+}
+</script>
+
+  <script id="shader-fs-sun" type="x-shader/x-fragment">
+#line 36
+precision mediump float;
+
+varying vec3 v_Position;
+varying vec3 v_Normal;
+varying vec2 v_TexCoord;
+
+uniform bool u_UseColorMap;
+uniform sampler2D u_ColorSampler;
+uniform vec4 u_ColorFallback;
+
+uniform vec3 u_AmbientColor;
+
+void main(void) {
+  vec3 
+}
+</script>
+  <script id="shader-fs-planet" type="x-shader/x-fragment">
+#line 35
+precision mediump float;
+
+varying vec3 v_Position;
+varying vec3 v_Normal;
+varying vec2 v_TexCoord;
+
+uniform bool u_UseColorMap;
+uniform sampler2D u_ColorSampler;
+uniform vec4 u_ColorFallback;
+
+uniform bool u_UseNightColorMap;
+uniform sampler2D u_NightColorSampler;
+
+uniform bool u_UseBumpMap;
+uniform sampler2D u_BumpSampler;
+
+uniform bool u_UseSpecularMap;
+uniform sampler2D u_SpecularSampler;
+
+uniform vec3 u_AmbientColor;
+uniform bool u_UsePointLight;
+uniform vec3 u_LightPosition;
+uniform vec3 u_LightColor;
+uniform vec3 u_LightFallback;
+uniform vec3 u_EyePosition;
+
+const vec3 luminosityWeights = vec3(0.2126, 0.7152, 0.0722);
+const vec3 white = vec3(1.0, 1.0, 1.0);
+
+void main(void) {
+  vec3 normal = normalize(v_Normal);
+  vec3 lightNormal = normalize(u_LightPosition - v_Position);
+  vec3 eyeNormal = normalize(u_EyePosition - v_Position);
+  vec3 light = u_AmbientColor;
+  if (u_UsePointLight) {
+    float diffuse = max(0.0, dot(normal, lightNormal));
+    float specular = max(0.0, dot(normal, normalize(lightNormal + eyeNormal)));
+//    gl_FragColor = vec4(
+//      u_Color * u_Ambient +
+//      u_Color * u_Diffuse * nDotL +
+//      u_Color * u_Specular * pow(hDotL, 4.0);//uSpecularExponent),
+//      1.0
+//    );
+//    vec3 pointLightWeight = uLightColor;
+//    if (cosTheta >= 0.0) {
+//      pointLightWeight *= 1.0;
+//    } else if (cosTheta > -0.3) {
+//      pointLightWeight *= (cosTheta + 0.3) * (1.0 / 0.3);
+//    } else {
+//      pointLightWeight *= 0.0;
+//    }
+//    light = pointLightWeight * (white - light);
+    light += u_LightColor * (diffuse + pow(specular, 32.0));
+  } else {
+    light = u_LightFallback;
+  }
+  if (u_UseColorMap) {
+    float lightIntensity = dot(light.rgb, luminosityWeights);
+    if (!u_UseNightColorMap || lightIntensity > 0.0) {
+      vec4 dayColor = texture2D(u_ColorSampler, v_TexCoord);
+      gl_FragColor = vec4(dayColor.rgb * light, dayColor.a);
+    } else {
+      gl_FragColor = texture2D(u_NightColorSampler, v_TexCoord);
+    }
+    //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0) * vec4(light, 1.0);
+  } else {
+    gl_FragColor = vec4(
+      u_ColorFallback.rgb * light,
+      u_ColorFallback.a
+    );
+  }
+}
+</script>
+  <script id="shader-fs-terrestial" type="x-shader/x-fragment">
+#line 35
+precision mediump float;
+
+varying vec3 v_Position;
+varying vec3 v_Normal;
+varying vec2 v_TexCoord;
+
+uniform bool u_UseColorMap;
+uniform sampler2D u_ColorSampler;
+uniform vec4 u_ColorFallback;
+
+uniform bool u_UseBumpMap;
+uniform sampler2D u_BumpSampler;
+
+uniform vec3 u_AmbientColor;
+uniform bool u_UsePointLight;
+uniform vec3 u_LightPosition;
+uniform vec3 u_LightColor;
+uniform vec3 u_LightFallback;
+
+const vec3 luminosityWeights = vec3(0.2126, 0.7152, 0.0722);
+const vec3 white = vec3(1.0, 1.0, 1.0);
+
+void main(void) {
+  vec3 normal = normalize(v_Normal);
+  vec3 lightNormal = normalize(u_LightPosition - v_Position);
+  vec3 eyeNormal = normalize(u_EyePosition - v_Position);
+  vec3 light = u_AmbientColor;
+  if (u_UsePointLight) {
+    float diffuse = max(0.0, dot(normal, lightNormal));
+    float specular = max(0.0, dot(normal, normalize(lightNormal + eyeNormal)));
+//    gl_FragColor = vec4(
+//      u_Color * u_Ambient +
+//      u_Color * u_Diffuse * nDotL +
+//      u_Color * u_Specular * pow(hDotL, 4.0);//uSpecularExponent),
+//      1.0
+//    );
+//    vec3 pointLightWeight = uLightColor;
+//    if (cosTheta >= 0.0) {
+//      pointLightWeight *= 1.0;
+//    } else if (cosTheta > -0.3) {
+//      pointLightWeight *= (cosTheta + 0.3) * (1.0 / 0.3);
+//    } else {
+//      pointLightWeight *= 0.0;
+//    }
+//    light = pointLightWeight * (white - light);
+    light += u_LightColor * (diffuse + pow(specular, 32.0));
+  } else {
+    light = u_LightFallback;
+  }
+  if (u_UseColorMap) {
+    float lightIntensity = dot(light.rgb, luminosityWeights);
+    if (!u_UseNightColorMap || lightIntensity > 0.0) {
+      vec4 dayColor = texture2D(u_ColorSampler, v_TexCoord);
+      gl_FragColor = vec4(dayColor.rgb * light, dayColor.a);
+    } else {
+      gl_FragColor = texture2D(u_NightColorSampler, v_TexCoord);
+    }
+    //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0) * vec4(light, 1.0);
+  } else {
+    gl_FragColor = vec4(
+      u_ColorFallback.rgb * light,
+      u_ColorFallback.a
+    );
+  }
+}
+</script>
+  <script id="shader-fs-gas-planet" type="x-shader/x-fragment">
+#line 35
+precision mediump float;
+
+varying vec3 v_Position;
+varying vec3 v_Normal;
+varying vec2 v_TexCoord;
+
+uniform bool u_UseColorMap;
+uniform sampler2D u_ColorSampler;
+uniform vec4 u_ColorFallback;
+
+uniform bool u_UseBumpMap;
+uniform sampler2D u_BumpSampler;
+
+uniform vec3 u_AmbientColor;
+uniform bool u_UsePointLight;
+uniform vec3 u_LightPosition;
+uniform vec3 u_LightColor;
+uniform vec3 u_LightFallback;
+uniform vec3 u_EyePosition;
+
+const vec3 luminosityWeights = vec3(0.2126, 0.7152, 0.0722);
+const vec3 white = vec3(1.0, 1.0, 1.0);
+
+void main(void) {
+  vec3 normal = normalize(v_Normal);
+  vec3 lightNormal = normalize(u_LightPosition - v_Position);
+  vec3 eyeNormal = normalize(u_EyePosition - v_Position);
+  vec3 light = u_AmbientColor;
+  if (u_UsePointLight) {
+    float diffuse = max(0.0, dot(normal, lightNormal));
+    float specular = max(0.0, dot(normal, normalize(lightNormal + eyeNormal)));
+//    gl_FragColor = vec4(
+//      u_Color * u_Ambient +
+//      u_Color * u_Diffuse * nDotL +
+//      u_Color * u_Specular * pow(hDotL, 4.0);//uSpecularExponent),
+//      1.0
+//    );
+//    vec3 pointLightWeight = uLightColor;
+//    if (cosTheta >= 0.0) {
+//      pointLightWeight *= 1.0;
+//    } else if (cosTheta > -0.3) {
+//      pointLightWeight *= (cosTheta + 0.3) * (1.0 / 0.3);
+//    } else {
+//      pointLightWeight *= 0.0;
+//    }
+//    light = pointLightWeight * (white - light);
+    light += u_LightColor * (diffuse + pow(specular, 32.0));
+  } else {
+    light = u_LightFallback;
+  }
+  if (u_UseColorMap) {
+    float lightIntensity = dot(light.rgb, luminosityWeights);
+    if (!u_UseNightColorMap || lightIntensity > 0.0) {
+      vec4 dayColor = texture2D(u_ColorSampler, v_TexCoord);
+      gl_FragColor = vec4(dayColor.rgb * light, dayColor.a);
+    } else {
+      gl_FragColor = texture2D(u_NightColorSampler, v_TexCoord);
+    }
+    //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0) * vec4(light, 1.0);
+  } else {
+    gl_FragColor = vec4(
+      u_ColorFallback.rgb * light,
+      u_ColorFallback.a
+    );
+  }
+}
+</script>
+  <script id="shader-fs-occlusion" type="x-shader/x-fragment">
+#line 111
+precision mediump float;
+uniform vec4 u_Color;
+void main() { gl_FragColor = u_Color; }
+</script>
+  
+  <script id="shader-pp-radialBlur" type="x-shader/x-fragment">
+#line 119
+// source: http://evanw.github.io/glfx.js/demo/
+// name: zoomBlur shader
+precision mediump float;
+
+varying vec2 v_TexCoord;
+
+uniform sampler2D u_Sampler;
+uniform vec2 u_Center;
+uniform float u_Strength;
+uniform vec2 u_TextureSize;
+
+float random(vec3 scale, float seed) {
+  // use the fragment position for a different seed per-pixel
+  return fract(
+    sin(
+      dot(gl_FragCoord.xyz + seed, scale)
+    ) * 43758.5453 + seed
+  );
+}
+
+void main() {
+  vec4 color = vec4(0.0);
+  float total = 0.0;
+  vec2 toCenter = u_Center - v_TexCoord * u_TextureSize;
+  
+  // randomize the lookup values to hide the fixed number of samples
+  float offset = random(
+    vec3(12.9898, 78.233, 151.7182),
+    0.0
+  );
+  
+  const float samples = 50.0;
+  for (float t = 0.0; t <= samples; t += 1.0) {
+    float percent = (t + offset) / samples;
+    float weight = (samples / 10.0) * (percent - percent * percent);
+    vec4 sample = texture2D(
+      u_Sampler,
+      v_TexCoord + toCenter * percent * u_Strength / u_TextureSize
+    );
+    
+    // switch to pre-multiplied alpha to correctly blur transparent images
+    sample.rgb *= sample.a;
+    
+    color += sample * weight;
+    total += weight;
+  }
+  gl_FragColor = color / total;
+  
+  // switch back from pre-multiplied alpha
+  gl_FragColor.rgb /= gl_FragColor.a + 0.00001;
+}
+</script>
+  <script id="shader-pp-smoothBlur" type="x-shader/x-fragment">
+#line 172
+precision mediump float;
+
+uniform sampler2D uSampler;
+uniform float uStrength;
+uniform vec2 uTextureSize;
+
+varying vec2 vTexCoord;
+
+float random(vec3 scale, float seed) {
+  // use the fragment position for a different seed per-pixel
+  return fract(
+    sin(
+      dot(gl_FragCoord.xyz + seed, scale)
+    ) * 43758.5453 + seed
+  );
+}
+
+void main() {
+  vec4 color = vec4(0.0);
+  float total = 0.0;
+  
+  // randomize the lookup values to hide the fixed number of samples
+  float offset = random(vec3(12.9898, 78.233, 151.7182), 0.0);
+  
+  const float samples = 100.0;
+  for (float t = 0.0; t <= samples; t += 1.0) {
+    float percent = (t + offset) / samples;
+    float weight = (samples / 10.0) * (percent - percent * percent);
+    vec4 sample = texture2D(
+      uSampler,
+      vTexCoord + toCenter * uStrength * percent / uTextureSize
+    );
+    
+    // switch to pre-multiplied alpha to correctly blur transparent images
+    sample.rgb *= sample.a;
+    
+    color += sample * weight;
+    total += weight;
+  }
+  gl_FragColor = color / total;
+  
+  // switch back from pre-multiplied alpha
+  gl_FragColor.rgb /= gl_FragColor.a + 0.00001;
+}
+</script>
+</head>
+
+<body onload="try { PlanetariumStart() } catch (e) { alert(e.stack) }">
+
+<canvas id="planetarium-3dcanvas" style="border: none;" width="1250" height="500"></canvas>
+<div id="debug"></div>
+
+  <!-- libraries -->
+  <script type="text/javascript" src="jquery-2.1.1.min.js"></script>
+  <script type="text/javascript" src="gl-matrix-2.2.1.min.js"></script>
+  <!-- planetarium scripts -->
+  <script type="text/javascript" src="createSphere.js"></script>
+  <script type="text/javascript" src="ycl.js"></script>
+  <script type="text/javascript" src="ycl.WebGL.js"></script>
+  <script type="text/javascript" src="planetarium.js"></script>
+  <script type="text/javascript">
+try {
+function PlanetariumStart() {
+  const scene = WebGLStart('planetarium-3dcanvas', 'planetarium-2dcanvas')
+  const debug = document.getElementById('debug')
+  
+  var lastDelta = 0
+  var deltas = []
+  var lastTime = Date.now()
+  tick()
+  
+  function tick() {
+    requestAnimFrame(tick)
+    const timeNow = Date.now()
+    const delta = timeNow - lastTime
+    scene.draw(delta)
+    lastTime = timeNow
+    deltas[lastDelta++] = delta
+    if (lastDelta >= 200) lastDelta = 0
+    const average = deltas.reduce(function(sum, next) { return sum + next }, 0) / deltas.length
+    debug.innerHTML =
+      "FPS: " +
+      (Math.round((10 * 1000) / average) / 10)
+  }
+}
+} catch (e) {
+    if (e instanceof Error) {
+      alert(e.stack)
+    } else {
+      alert(e)
+    }
+}
+</script>
+
+</body>
+</html>
