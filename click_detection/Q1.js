@@ -3,11 +3,15 @@
 var VSHADER_SOURCE =
   '#line 5\n' +
   'attribute vec4 a_Position;\n' +
+  //'attribute vec2 a_TextureCoord;\n' +
   'varying vec4 v_Position;\n' +
+  //'varying highp vec2 v_TextureCoord;\n' +
   'uniform mat4 u_ModelMatrix;\n' +
   'void main() {\n' +
   '  gl_Position = u_ModelMatrix * a_Position;\n' +
   '  v_Position = a_Position;\n' +
+  //'  v_TextureCoord = a_TextureCoord;\n' +
+  
   '}\n';
 
 // Fragment shader program
@@ -17,10 +21,13 @@ var FSHADER_SOURCE =
   'precision mediump float;\n' +
   '#endif GL_ES\n' +
   'varying vec4 v_Position;\n' +
+  //'varying highp vec2 v_TextureCoord;\n' +
   'uniform bool u_Clicked;\n' +
   'uniform vec4 u_Id;\n' +
+  //'uniform sampler2D u_Sampler;\n' +
   'void main() {\n' +
   '  if(u_Clicked) gl_FragColor = u_Id;\n' +
+  //'  else if(u_Id.x==0.0) gl_FragColor = texture2D(u_Sampler, vec2(v_TextureCoord.s, v_TextureCoord.t));\n' +
   '  else gl_FragColor = v_Position;\n' +
   '}\n';
 
@@ -83,13 +90,16 @@ function main() {
   var modelMatrix = new Matrix4();
   // Register event handler
   initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
+  //initTextures(gl);
 
   // Start drawing
   var tick = function() {
+	  if(true){//texturesLoaded){
 	animateCamera(); // Smoothly transition camera
     currentAngle = animate(currentAngle);  // Update the rotation angle
     drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix);
     requestAnimationFrame(tick, canvas); // Request that the browser calls tick
+	}
   };
   tick();
 }
@@ -144,8 +154,10 @@ function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_Mo
 				 var picked = check(gl, n, x_in_canvas, y_in_canvas, currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
 				 if (picked[0] == 255)
 					  targetGaze = new Float32Array(cube1Center);
-				 else if (picked[1] == 255) 
-					  targetGaze = new Float32Array(cube2Center);//alert('The cube2 was selected! ');
+				 else if (picked[1] == 255) {
+					  targetGaze = new Float32Array(cube2Center);
+					  //alert('The cube2 was selected! ');
+				  }
 				 else if (picked[2] == 255) 
 					  targetGaze = new Float32Array(cube3Center);
 				 else if (picked[2] == 128) 
@@ -153,8 +165,7 @@ function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_Mo
 			 }
 		}
 		else if(mouseDown === 1){
-			console.log("drag");
-			//console.log("deltaX: "+deltaX+" Y: "+deltaY);
+			//console.log("drag");
 		}
 	}, false);
 	
@@ -182,15 +193,38 @@ function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_Mo
 		}
     };
     
-		// Internet Explorer, Opera, Google Chrome and Safari
+	// Internet Explorer, Opera, Google Chrome and Safari
 	element.addEventListener ("mousewheel", mouseScroll, false);
-		// Firefox
+	// Firefox
 	element.addEventListener("DOMMouseScroll", mouseScroll, false);
 }
 
+function initTextures(gl) {
+  cubeTexture = gl.createTexture();
+  cubeImage = new Image();
+  cubeImage.onload = function() { handleTextureLoaded(cubeImage, cubeTexture); }
+  cubeImage.src = "http://www.mouserunner.com/images/Yellow1_2.png";
+  
+  var textureCoordAttribute = gl.getAttribLocation(gl.program, "aTextureCoord");
+  gl.enableVertexAttribArray(textureCoordAttribute);
+}
+var texturesLoaded = false;
+function handleTextureLoaded(image, texture) {
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  texturesLoaded = true;
+}
+
 function mouseScroll(ev){
+	var MAXRADIUS = 10;
+	var MINRADIUS = 1;
 	targetRadius+=ev.detail/30;
-	if(targetRadius<1) targetRadius=1;
+	if(targetRadius<MINRADIUS) targetRadius=MINRADIUS;
+	else if(targetRadius>MAXRADIUS) targetRadius=MAXRADIUS;
 }
 
 var cube1Center = new Float32Array([-1,0,0]); //find way to dynamically find these! (I guess they're given anyways)
@@ -203,21 +237,28 @@ function drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix){
     //modelMatrix.setIdentity();
     modelMatrix.setPerspective(70,2/1,0.5,200); //-1,1,-1,1,0.5,500);
     //modelMatrix.lookAt(1,0,1, 0,0,0 ,0,1,0);
-    var x = radius*Math.cos(latitude)*Math.cos(longitude)+gazeVector[0];
-    var z = radius*Math.cos(latitude)*Math.sin(longitude)+gazeVector[2];
-    var y = radius*Math.sin(latitude)+gazeVector[1];
+    var x = Math.cos(latitude)*Math.cos(longitude);
+    var z = Math.cos(latitude)*Math.sin(longitude);
+    var y = Math.sin(latitude);
     //console.log(x+", "+y+", "+z);
-    modelMatrix.lookAt(x,y,z,gazeVector[0],gazeVector[1],gazeVector[2] ,0,1,0);
     
-    // Draw "skybox" (not an actual skybox)
+    // Draw skybox
+    //TODO give it its own shader
     var modelMatrixChild = new Matrix4(modelMatrix);
+    modelMatrixChild.lookAt(x,y,z,0,0,0 ,0,1,0);
+    //modelMatrixChild.lookAt(x,y,z, 0,0,0, 0,1,0);
     //modelMatrixChild.translate(cube1Center[0],cube1Center[1],cube1Center[2]);
-    modelMatrixChild.scale(100,100,100);
+    var skySize = 100;
+    modelMatrixChild.scale(skySize,skySize,skySize);
     // Clear <canvas>
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-	 gl.uniform4f(u_Id,1,0,0,1);
+	 gl.uniform4f(u_Id,0,0,0,1);
     draw(gl, n, 0.0, modelMatrixChild, u_ModelMatrix);   // Draw the triangle
     
+    var x = radius*x+gazeVector[0];
+    var z = radius*z+gazeVector[2];
+    var y = radius*y+gazeVector[1];
+    modelMatrix.lookAt(x,y,z,gazeVector[0],gazeVector[1],gazeVector[2] ,0,1,0);
     
     var modelMatrixChild = new Matrix4(modelMatrix);
     modelMatrixChild.translate(cube1Center[0],cube1Center[1],cube1Center[2]);
@@ -334,8 +375,7 @@ function animateCamera() {
   // Calculate the elapsed time
   var now = Date.now();
   var elapsed = now - g_last;
-  //g_last = now; // don't update the last timestamp before animate() is called!
-  // Update the current rotation angle (adjusted by the elapsed time)
+  //TODO increase speed if object is clicked again
   var speed = elapsed;
   //console.log(elapsed);
   gazeVector[0] += (targetGaze[0]-gazeVector[0])*(speed/1000);
