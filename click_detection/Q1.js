@@ -3,15 +3,14 @@
 var VSHADER_SOURCE =
   '#line 5\n' +
   'attribute vec4 a_Position;\n' +
-  //'attribute vec2 a_TextureCoord;\n' +
+  'attribute vec2 a_TextureCoord;\n' +
   'varying vec4 v_Position;\n' +
-  //'varying highp vec2 v_TextureCoord;\n' +
+  'varying vec2 v_TextureCoord;\n' +
   'uniform mat4 u_ModelMatrix;\n' +
   'void main() {\n' +
   '  gl_Position = u_ModelMatrix * a_Position;\n' +
   '  v_Position = a_Position;\n' +
-  //'  v_TextureCoord = a_TextureCoord;\n' +
-  
+  '  v_TextureCoord = a_TextureCoord;\n' +
   '}\n';
 
 // Fragment shader program
@@ -21,32 +20,40 @@ var FSHADER_SOURCE =
   'precision mediump float;\n' +
   '#endif GL_ES\n' +
   'varying vec4 v_Position;\n' +
-  //'varying highp vec2 v_TextureCoord;\n' +
+  'varying vec2 v_TextureCoord;\n' +
   'uniform bool u_Clicked;\n' +
   'uniform vec4 u_Id;\n' +
-  //'uniform sampler2D u_Sampler;\n' +
+  'uniform sampler2D u_Sampler;\n' +
   'void main() {\n' +
   '  if(u_Clicked) gl_FragColor = u_Id;\n' +
-  //'  else if(u_Id.x==0.0) gl_FragColor = texture2D(u_Sampler, vec2(v_TextureCoord.s, v_TextureCoord.t));\n' +
+  '  else if(u_Id.x==0.0&&u_Id.y==0.0&&u_Id.z==0.0) gl_FragColor = texture2D(u_Sampler, v_TextureCoord);\n' +
   '  else gl_FragColor = v_Position;\n' +
   '}\n';
 
 // Rotation angle (degrees/second)
-var ANGLE_STEP = 40.0;
+var ANGLE_STEP = 90.0;
 var u_Id;
 
 // Used to find camera position relative to gaze vector
-var latitude = 0, longitude = 0, radius = 2;
+var latitude = 0.5, longitude = 0, radius = 4;
 var targetRadius = radius;
 Math.PI_2 = Math.PI/2;
 
 function main() {
   // Retrieve <canvas> element
   var canvas = document.getElementById('webgl');
+  var hud = document.getElementById('hud');
+  
+  if (!canvas || !hud) { 
+    console.log('Failed to get HTML elements');
+    return false; 
+  } 
 
   // Get the rendering context for WebGL
   var gl = getWebGLContext(canvas);
-  if (!gl) {
+  // Get the rendering context for 2DCG
+  var ctx = hud.getContext('2d');
+  if (!gl || !ctx) {
     console.log('Failed to get the rendering context for WebGL');
     return;
   }
@@ -89,12 +96,13 @@ function main() {
   // Model matrix
   var modelMatrix = new Matrix4();
   // Register event handler
-  initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
-  //initTextures(gl);
+  initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_ModelMatrix,hud);
+  initTextures(gl);
 
   // Start drawing
   var tick = function() {
-	  if(true){//texturesLoaded){
+	  if(true){
+    draw2D(ctx, currentAngle); // Draw 2D
 	animateCamera(); // Smoothly transition camera
     currentAngle = animate(currentAngle);  // Update the rotation angle
     drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix);
@@ -104,7 +112,9 @@ function main() {
   tick();
 }
 
-function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_ModelMatrix){
+var gazeVector = new Float32Array([0,0,0]);
+var targetGaze = new Float32Array(gazeVector);
+function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_ModelMatrix,hud){
 	var mouseDown = false, mouseMove = false, hasBreached = false;
 	var element = canvas;
 	var oldX, oldY;
@@ -152,16 +162,38 @@ function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_Mo
 				 // Check if it is on object
 				 var x_in_canvas = x - rect.left, y_in_canvas = rect.bottom - y;
 				 var picked = check(gl, n, x_in_canvas, y_in_canvas, currentAngle,u_Clicked, modelMatrix, u_ModelMatrix);
-				 if (picked[0] == 255)
+				 if (picked[0] == 255){
 					  targetGaze = new Float32Array(cube1Center);
-				 else if (picked[1] == 255) {
-					  targetGaze = new Float32Array(cube2Center);
-					  //alert('The cube2 was selected! ');
+					  if(target == 1) numClicks++;
+					  else {
+						  target = 1;
+						  numClicks = 1;
+					  }
 				  }
-				 else if (picked[2] == 255) 
+				 else if (picked[1] == 255){
+					  targetGaze = new Float32Array(cube2Center);
+					  if(target == 2) numClicks++;
+					  else {
+						  target = 2;
+						  numClicks = 1;
+					  }
+				  }
+				 else if (picked[2] == 255){
 					  targetGaze = new Float32Array(cube3Center);
-				 else if (picked[2] == 128) 
+					  if(target == 3) numClicks++;
+					  else {
+						  target = 3;
+						  numClicks = 1;
+					  }
+				  }
+				 else if (picked[2] == 128){
 					  targetGaze = new Float32Array(cube4Center);
+					  if(target == 4) numClicks++;
+					  else {
+						  target = 4;
+						  numClicks = 1;
+					  }
+				  }
 			 }
 		}
 		else if(mouseDown === 1){
@@ -169,26 +201,89 @@ function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_Mo
 		}
 	}, false);
 	
+	hud.onclick= function(ev){
+		var x = ev.clientX;
+		var y = ev.clientY;
+		//alert(x+","+y);
+		if(x<106){
+			// play/pause
+			if(timeFlow==0.0) {
+				timeFlow = timeFlow_last;
+				timeFlow_last = 0.0;
+			}
+			else {
+				timeFlow_last = timeFlow;
+				timeFlow = 0;
+			}
+		}
+		else if(x<166){
+			// faster
+			if (Math.abs(timeFlow)<8) timeFlow = timeFlow *2;
+		}
+		else if(x<232){
+			// slower
+			if (Math.abs(timeFlow)>0.125) timeFlow = timeFlow * 0.5;
+		}
+		else if(x<304){
+			// reverse
+		    timeFlow = timeFlow *-1;
+		}
+		else{
+			// reset
+			timeFlow = 1.0;
+		}
+	};
+	
 	// WASD free-cam (but only in the XZ plane
 	element,onkeypress = function(ev){
 		var key = String.fromCharCode(ev.charCode);
+		//console.log(key);
 		switch(key){
 		  case 'w':
-			//console.log("w pressed!");
 			targetGaze[0]-= Math.cos(longitude)*0.1;
 			targetGaze[2]-= Math.sin(longitude)*0.1;
+			target = 0;
+			numClicks = 1;
 			break;
 		  case 's':
 			targetGaze[0]+= Math.cos(longitude)*0.1;
 			targetGaze[2]+= Math.sin(longitude)*0.1;
+			target = 0;
+			numClicks = 1;
 			break;
 		  case 'a':
 			targetGaze[0]-= Math.sin(longitude)*0.1;
 			targetGaze[2]+= Math.cos(longitude)*0.1;
+			target = 0;
+			numClicks = 1;
 			break;
 		  case 'd':
 			targetGaze[0]+= Math.sin(longitude)*0.1;
 			targetGaze[2]-= Math.cos(longitude)*0.1;
+			target = 0;
+			numClicks = 1;
+			break;
+		  case ' ':
+			if(timeFlow==0.0) {
+				timeFlow = timeFlow_last;
+				timeFlow_last = 0.0;
+			}
+			else {
+				timeFlow_last = timeFlow;
+				timeFlow = 0;
+			}
+			break;
+		  case '1':
+		    timeFlow = 1;
+			break;
+		  case '2':
+		    timeFlow = timeFlow * 0.5;
+			break;
+		  case '3':
+		    timeFlow = timeFlow *-1;
+			break;
+		  case '4':
+			if (timeFlow<8) timeFlow = timeFlow *2;
 			break;
 		}
     };
@@ -199,40 +294,41 @@ function initEventHandlers(gl,n,canvas,currentAngle,u_Clicked, modelMatrix, u_Mo
 	element.addEventListener("DOMMouseScroll", mouseScroll, false);
 }
 
-function initTextures(gl) {
-  cubeTexture = gl.createTexture();
-  cubeImage = new Image();
-  cubeImage.onload = function() { handleTextureLoaded(cubeImage, cubeTexture); }
-  cubeImage.src = "http://www.mouserunner.com/images/Yellow1_2.png";
-  
-  var textureCoordAttribute = gl.getAttribLocation(gl.program, "aTextureCoord");
-  gl.enableVertexAttribArray(textureCoordAttribute);
-}
-var texturesLoaded = false;
-function handleTextureLoaded(image, texture) {
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  texturesLoaded = true;
-}
-
 function mouseScroll(ev){
-	var MAXRADIUS = 10;
+	var MAXRADIUS = 20;
 	var MINRADIUS = 1;
 	targetRadius+=ev.detail/30;
 	if(targetRadius<MINRADIUS) targetRadius=MINRADIUS;
 	else if(targetRadius>MAXRADIUS) targetRadius=MAXRADIUS;
 }
 
+function initTextures(gl) {
+  cubeTexture = gl.createTexture();
+  cubeImage = new Image();
+  cubeImage.onload = function() { handleTextureLoaded(gl,cubeImage, cubeTexture); }
+  
+  cubeImage.crossOrigin = 'anonymous';
+  cubeImage.src = "http://i.imgur.com/SbeDzyk.jpg";
+  
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, cubeTexture);
+  gl.uniform1i(gl.getUniformLocation(gl.program, "u_Sampler"), 0);
+}
+var texturesLoaded = false;
+function handleTextureLoaded(gl,image, texture) {
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); //gl.NEAREST is also allowed, instead of gl.LINEAR, as neither mipmap.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); //Prevents s-coordinate wrapping (repeating).
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); //Prevents t-coordinate wrapping (repeating).
+  //gl.bindTexture(gl.TEXTURE_2D, null);
+  texturesLoaded = true;
+}
+
 var cube1Center = new Float32Array([-1,0,0]); //find way to dynamically find these! (I guess they're given anyways)
 var cube2Center = new Float32Array([1,0,0]);
 var cube3Center = new Float32Array([0,0,1]);
 var cube4Center = new Float32Array([0,0,-1]); // store these in a better way...
-var gazeVector = new Float32Array([0,0,0]);
-var targetGaze = new Float32Array(gazeVector);
 function drawCubes(gl, n, currentAngle, modelMatrix, u_ModelMatrix){
     //modelMatrix.setIdentity();
     modelMatrix.setPerspective(70,2/1,0.5,200); //-1,1,-1,1,0.5,500);
@@ -314,6 +410,21 @@ function initVertexBuffers(gl) {
 	0,0,0,   0,1,0,   0,1,1,
   ]);
   var n = 36;   // The number of vertices
+  
+  var texCoords = new Float32Array ([
+    0,1,   1, 1,   1, 0,
+	1, 0,   0, 0,   0,1, //one square
+    0,1,   1, 1,   1, 0,
+	1, 0,   0, 0,   0,1, //two squares
+	1, 0,   0, 0,   0, 1,
+	0, 1,   1, 1,   1, 0, //three squares
+	0,0,    0,1,    1,1,
+	1,1,    1,0,    0,0,  //four squares
+	0,1,   1,1,   1,0,
+	1,0,   0,0,   0,1, //five squares
+	1,1,   0,1,   0,0,
+	0,0,   1,0,   1,1,
+  ]);
 
   // Create a buffer object
   var vertexBuffer = gl.createBuffer();
@@ -336,6 +447,23 @@ function initVertexBuffers(gl) {
   
   // Enable the assignment to a_Position variable
   gl.enableVertexAttribArray(a_Position);
+  
+  
+  cubeVerticesTextureCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, cubeVerticesTextureCoordBuffer);
+  
+  gl.bufferData(gl.ARRAY_BUFFER, texCoords,
+                gl.STATIC_DRAW);
+  // Assign the buffer object to a_Position variable
+  var a_TextureCoord = gl.getAttribLocation(gl.program, 'a_TextureCoord');
+  if(a_TextureCoord < 0) {
+    console.log('Failed to get the storage location of a_TextureCoord');
+    return -1;
+  }
+  gl.vertexAttribPointer(a_TextureCoord, 2, gl.FLOAT, false, 0, 0);
+  
+  // Enable the assignment to a_Position variable
+  gl.enableVertexAttribArray(a_TextureCoord);
 
   return n;
 }
@@ -361,16 +489,19 @@ function draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix) {
 
 // Last time that this function was called
 var g_last = Date.now();
+var timeFlow = 1.0;
+var timeFlow_last = 0.0;
 function animate(angle) {
   // Calculate the elapsed time
   var now = Date.now();
   var elapsed = now - g_last;
   g_last = now;
   // Update the current rotation angle (adjusted by the elapsed time)
-  var newAngle = angle + (ANGLE_STEP * elapsed) / 1000.0;
+  var newAngle = angle + (ANGLE_STEP * (elapsed * timeFlow)) / 1000.0;
   return newAngle %= 360;
 }
-
+var target = false;
+var numClicks = 0;
 function animateCamera() {
   // Calculate the elapsed time
   var now = Date.now();
@@ -378,9 +509,27 @@ function animateCamera() {
   //TODO increase speed if object is clicked again
   var speed = elapsed;
   //console.log(elapsed);
-  gazeVector[0] += (targetGaze[0]-gazeVector[0])*(speed/1000);
-  gazeVector[1] += (targetGaze[1]-gazeVector[1])*(speed/1000);
-  gazeVector[2] += (targetGaze[2]-gazeVector[2])*(speed/1000);
+  distance = Math.sqrt(Math.pow(targetGaze[0]-gazeVector[0],2)+Math.pow(targetGaze[1]-gazeVector[1],2)+Math.pow(targetGaze[2]-gazeVector[2],2));
+  if(distance < 0.02){
+	  gazeVector[0] = targetGaze[0];
+	  gazeVector[1] = targetGaze[1];
+	  gazeVector[2] = targetGaze[2];
+	  hasTarget = 0;
+	  numClicks = 0;
+  }
+  else{
+	  gazeVector[0] += (targetGaze[0]-gazeVector[0])*(numClicks*speed/1000);
+	  gazeVector[1] += (targetGaze[1]-gazeVector[1])*(numClicks*speed/1000);
+	  gazeVector[2] += (targetGaze[2]-gazeVector[2])*(numClicks*speed/1000);
+  }
   
   radius += (targetRadius-radius)*(speed/100);
+}
+var distance="";
+function draw2D(ctx, currentAngle) {
+  ctx.clearRect(0, 0, 400, 400); // Clear <hud>
+  // Draw white letters
+  ctx.font = '18px "Times New Roman"';
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)'; // Set white to the color of letters
+  ctx.fillText('Play/pause   Faster   Slower   Reverse   Reset   '+distance, 0, 15);
 }

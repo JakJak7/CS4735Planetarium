@@ -6,9 +6,10 @@
   </head>
 
   <body onload="main()">
-    <canvas id="webgl" width="800" height="400">
+    <canvas id="webgl" width="1600" height="800" style="position: absolute; z-index: 0">
     Please use a browser that supports "canvas"
     </canvas>
+    <canvas id="hud" width="378" height="20" style="position: absolute; z-index: 1; top: 780px; left: 20px"></canvas>
 
     <script src="../lib/webgl-utils.js"></script>
     <script src="../lib/webgl-debug.js"></script>
