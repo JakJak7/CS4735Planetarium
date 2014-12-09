@@ -23,6 +23,9 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
     if (typeof canvas === "string") {
       canvas = document.getElementById(canvas)
     }
+    if (typeof canvas.getContext !== "function") {
+      throw new Error("must provide a valid canvas object or id")
+    }
     var gl = canvas.getContext("experimental-webgl")
     gl.viewportWidth = canvas.width
     gl.viewportHeight = canvas.height
@@ -137,6 +140,9 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
     },
     multiply: function(b, other) {
       mat4.mul(this.current, other||this.current, b)
+    },
+    multiplyFrom: function(a, other) {
+      mat4.mul(this.current, a, other||this.current)
     },
     ortho: function(left, right, bottom, top, near, far) {
       mat4.ortho(this.current, left, right, bottom, top, near, far)
@@ -276,9 +282,10 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
     
     return shader
   }
-  function createShaderFromHTML(gl, id) {
+  function createShaderFromHTML(gl, id, name) {
     var type, source
     var shader = document.getElementById(id)
+    if (!name) name = id
     if (!shader) throw new Error("shader element \"" + id + "\" not found!")
     if (shader.nodeName != "SCRIPT") {
       throw new Error("shader must be contained in a script tag!")
@@ -305,7 +312,7 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
       node = node.nextSibling
     }
     
-    return createShader(gl, type, source, id)
+    return createShader(gl, type, source, name)
   }
   function createProgram(gl, vertexShader, fragmentShader, vertexName, fragmentName, programName) {
     const program = gl.createProgram()
@@ -414,15 +421,17 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
       }
       return gl.getUniform(program, uniform.handle)
     }
-    program.setUniform = function(uniformName, value) {
+    program.setUniform = function(uniformName, value, ignoreError) {
       var uniform = locations[uniformName]
       if (!(uniform instanceof Uniform)) {
+        if (ignoreError) return
         throw new Error("uniform \"" + uniformName + "\" does not exist")
       }
       uniform.handler(gl, uniform.handle, value)
     }
     program.use = function() {
       gl.useProgram(program)
+      return program
     }
     
     return program
@@ -625,18 +634,10 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, texture);
       
-      gl.texParameteri(
-        gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR
-      )
-      gl.texParameteri(
-        gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE
-      )
-      gl.texParameteri(
-        gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE
-      )
-      gl.texImage2D(
-        gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image
-      )
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image)
       if (!error) loaded = true
       if (callback) callback(texture, image)
     }
@@ -748,3 +749,4 @@ ycl.extend(ycl.WebGL || (ycl.WebGL = {}), (function() {
     },
   }
 })())
+

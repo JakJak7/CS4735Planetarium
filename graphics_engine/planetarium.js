@@ -1,21 +1,12 @@
 var WebGL = ycl.WebGL
 
-function createProgram(gl, idVec, idFrag, name) {
-  return WebGL.createProgramFromHTML(
-    gl,
-    "shader-vs-" + idVec,
-    "shader-fs-" + (idFrag || idVec),
-    name
-  )
-}
+const up = vec3.fromValues(0, 1, 0)
+const origin = vec4.fromValues(0, 0, 0)
 
 function createPlanetarium(
-  gl, g2d,
-  planetProgram,
-  occlusionProgram, smoothBlurProgram, radialBlurProgram
+  gl, programs
 ) {
-  const origin = vec4.fromValues(0.0, 0.0, 0.0, 1.0)
-  const white = vec4.fromValues(1.0, 1.0, 1.0, 1.0)
+  const white = vec3.fromValues(1.0, 1.0, 1.0)
   const sphere = createSphere(gl, 50, 50)
   
   var _getTexture = (function() {
@@ -32,19 +23,28 @@ function createPlanetarium(
   
   const vp = new ViewPoint()
   vp.setPerspective(Math.degToRad(60), 1250/500, 1, 20)
-  vp.setLookAt([0, 0, 10], [0, 0, 0], [0, 1, 0])
+  vp.setLookAt([0, 0, 10], origin, up)
+  const pointLight = vec3.create()
   
   const planets = []
   function Planet(name, props) {
-    planets.push(this)
+    this.shader = programs[props.shader]
+    if (!this.shader) {
+      throw new Error("shader \"" + props.shader + "\" not found!")
+    }
     
     this._ = props
     this.transform = mat4.create()
+    this.normalTransform = mat3.create()
     this.name = name
     
-    if (props.callback) this.callback = props.callback
+    if (typeof props.callback === "function") this.callback = props.callback
     if (props.texture) this.texture = _getTexture(props.texture)
     if (props.nightTexture) this.nightTexture = _getTexture(props.nightTexture)
+    if (props.specularTexture) this.specularTexture = _getTexture(props.specularTexture)
+    if (props.normalTexture) this.normalTexture = _getTexture(props.normalTexture)
+    
+    planets.push(this)
   }
   Planet.prototype.addChild = function(planet) {
     if (!(planet instanceof Planet)) {
@@ -85,18 +85,16 @@ function createPlanetarium(
     diameter: 1,
     shader: "sun",
     texture: "sunmap.jpg",
-    lightColor: white,
     callback: (function() {
+      const origin = vec4.fromValues(0, 0, 0, 1)
       const point = vec4.create()
       const matrix = mat4.create()
       return function() {
         vec4.transformMat4(point, origin, this.transform)
-        planetProgram.use()
-        planetProgram.setPointLight([point[0], point[1], point[2]], white)
+        vec3.copy(pointLight, point)
 //        mat4.mul(matrix, vp._pov, this.transform)
         vec4.transformMat4(point, point, vp._pov)
-        radialBlurProgram.use()
-        radialBlurProgram.setUniform(
+        programs.radialBlur.use().setUniform(
           "u_Center", [
           (point[0] / point[3] + 1) * gl.viewportWidth / 2,
           (point[1] / point[3] + 1) * gl.viewportHeight / 2
@@ -111,15 +109,15 @@ function createPlanetarium(
       tilt: 7.155
     },
     rotation: {
-      period: 23.9345,
+      period: 30,//23.9345,
       tilt: 23.27
     },
     diameter: 1,
     shader: "earth",
     texture: "earthmap1k.jpg",
     nightTexture: "earthlights1k.jpg",
-    specularTexture: "earthspecular1k.jpg",
-    normalTexture: "earthnormal1k.jpg"
+    specularTexture: "earthspec1k.jpg",
+    normalTexture: "earthbump1k.jpg"
   }))
   var moon = earth.addChild(new Planet("Moon", {
     orbit: {
@@ -138,13 +136,13 @@ function createPlanetarium(
   
   var handlers = [
     callbacks, drawSphere,
-    occlude, radialBlur, //smoothBlur,
+    //occlude, radialBlur, //smoothBlur,
   ]
   const controllers = {}
   const timelineController = (function() {
     var time = 0
     function default_TLC_update(elapsed) {
-      time += elapsed
+      time += elapsed / 4
     }
     function default_TLC_getTime() {
       return time / 1000
@@ -161,6 +159,10 @@ function createPlanetarium(
     else if (mv.current) mv = mv.current
     timelineController.update(elapsed)
     const timestamp = timelineController.getTime()
+    const t = vec3.create(), u = vec3.fromValues(0.001, 3, 0.001)
+    vec3.transformMat4(t, origin, earth.transform)
+    vec3.add(u, u, t)
+    vp.setLookAt(u, t, up)
     for (self in controllers) {
       const update = controllers[self].update
       if (update) update.call(self, timestamp, elapsed)
@@ -228,29 +230,29 @@ function createPlanetarium(
     }
   }
   function drawSphere() {
-    planetProgram.use()
+    var i
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
+    var shaders = []
     gl.blendEquation(gl.FUNC_ADD)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-    planetProgram.setPointOfView(vp, true)
-    for (var i = 0; i < planets.length; ++i) {
+    for (i = 0; i < planets.length; ++i) {
       var planet = planets[i]
+      var shader = planet.shader.use()
+      if (shaders.indexOf(shader) < 0) {
+        shaders.push(shader)
+        shader.setPointOfView(vp)
+        if (shader.usePointLight) {
+          shader.setLightPosition(pointLight)
+          if (shader.useSpecular) {
+            shader.setCameraPosition(vp)
+          }
+        }
+      }
       //viewpoint
-      planetProgram.setModelView(planet.transform, true)
-      planetProgram.setTexture(planet.texture, 0)
-      if (planet.lightColor) {
-        planetProgram.useStaticLight(planet.lightColor)
-      } else {
-        planetProgram.usePointLight()
-      }
-      if (planet.nightTexture) {
-        planetProgram.setNightTexture(planet.nightTexture, 1)
-      } else {
-        planetProgram.disableNightTexture()
-      }
+      shader.prepare(planet)
       sphere.draw(
-        planetProgram,
+        shader,
         "a_Position",
         "a_Normal",
         "a_TexCoord"
@@ -260,19 +262,19 @@ function createPlanetarium(
   function occlude() {
     const sunColor = vec4.fromValues(1.0, 0.8, 0.2, 1.0)
     const otherColor = vec4.fromValues(0.0, 0.0, 0.0, 1.0)
-    occlusionProgram.use()
-    occlusionProgram.frameBuffer.bind()
-    occlusionProgram.frameBuffer.viewportFull()
+    var shader = programs.occlusion.use()
+    shader.frameBuffer.bind()
+    shader.frameBuffer.viewportFull()
     gl.clearColor(0.0, 0.0, 0.0, 1.0)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-    occlusionProgram.setPointOfView(vp)
+    shader.setPointOfView(vp)
     for (var i = 0; i < planets.length; ++i) {
       var planet = planets[i]
-      occlusionProgram.setModelView(planet.transform, false)
-      occlusionProgram.setUniform(
+      shader.setModelView(planet.transform, false)
+      shader.setUniform(
         "u_Color", planet == sun ? sunColor : otherColor
       )
-      sphere.draw(occlusionProgram, "a_Position")
+      sphere.draw(shader, "a_Position")
     }
   }
   function smoothBlur() {
@@ -285,13 +287,13 @@ function createPlanetarium(
     smoothBlurProgram.draw(occlusionProgram.frameBuffer.texture, 0)
   }
   function radialBlur() {
+    var shader = programs.radialBlur.use()
     gl.blendEquation(gl.FUNC_ADD)
     gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ZERO)
-    radialBlurProgram.use()
-    radialBlurProgram.setUniform("u_Strength", 0.95)
+    shader.setUniform("u_Strength", 0.95)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
-    radialBlurProgram.draw(occlusionProgram.frameBuffer.texture, 0)
+    shader.draw(programs.occlusion.frameBuffer.texture, 0)
   }
   
   var setView = (function() {
@@ -359,6 +361,7 @@ function createPlanetarium(
 function ViewPoint() {
   this._p = mat4.create()
   this._c = mat4.create()
+  this._e = vec3.create()
   this._pov = mat4.create()
 }
 ViewPoint.prototype.setProjection = function(projection) {
@@ -378,105 +381,154 @@ ViewPoint.prototype.setCamera = function(camera) {
   mat4.mul(this._pov, this._p, this._c)
 }
 ViewPoint.prototype.setLookAt = function(eye, point, up) {
+  vec3.copy(this._e, eye)
   mat4.lookAt(this._c, eye, point, up)
   mat4.mul(this._pov, this._p, this._c)
 }
 
 function WebGLStart(canvasId) {
   // initialize WebGL
-  try {
   var gl = WebGL.createContext(canvasId)
   gl.enable(gl.DEPTH_TEST)
   gl.enable(gl.BLEND)
+  gl.enable(gl.CULL_FACE)
   gl.cullFace(gl.BACK)
   
   const setupViewFunctions = (function() {
-    const buf3 = mat3.create()
+    const bufm3 = mat3.create()
+    const bufv3 = vec3.create()
     return function(program) {
-      program.setPointOfView = function(vp, useEye) {
+      program.setPointOfView = function(vp) {
         program.setUniform("u_PMatrix", vp._pov)
-        if (useEye) {
-          program.setUniform("u_EyePosition", [vp._c[12], vp._c[13], vp._c[14]])
-        }
       }
-      program.setModelView = function(mv, useNormal) {
+      program.setCameraPosition = function(vp) {
+        const e = vp._e
+        vec3.set(bufv3, -e[0], -e[1], -e[2])
+        program.setUniform("u_EyePosition", bufv3)
+      }
+      program.setLightPosition = function(lightPosition) {
+        program.setUniform("u_LightPosition", lightPosition)
+      }
+      program.setModelView = function(mv) {
         // set model view transform
         program.setUniform("u_MVMatrix", mv)
-        
-        if (useNormal) {
-          // set normal transform
-          mat3.fromMat4(buf3, mv)
-          mat3.invert(buf3, buf3)
-          mat3.transpose(buf3, buf3)
-          program.setUniform("u_NMatrix", buf3)
-        }
+      }
+      program.setModelViewWithNormals = function(mv, normal) {
+        if (!normal) normal = bufm3
+        program.setUniform("u_MVMatrix", mv)
+        mat3.fromMat4(normal, mv)
+        mat3.invert(normal, normal)
+        mat3.transpose(normal, normal)
+        program.setUniform("u_NMatrix", normal)
       }
     }
-  })()
+  }())
+  function setupTextureFunction(program, name, uniformName) {
+    if (!uniformName) uniformName = name
+    function setTexture(uniformName, texture, unit) {
+      if (typeof unit !== "number" || unit != Math.floor(unit) || unit < 0 || unit >= 32) {
+        throw new Error("invalid texture unit")
+      }
+      if (texture && texture.isLoaded) {
+        gl.activeTexture(unit + gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, texture)
+        program.setUniform("u_Use" + uniformName + "Map", true)
+        program.setUniform("u_" + uniformName + "Sampler", unit)
+      } else {
+        program.setUniform("u_Use" + uniformName + "Map", false)
+      }
+    }
+    program["set" + name + "Texture"] = function(texture, unit) {
+      setTexture(uniformName, texture, unit)
+    }
+  }
   
-  var planetProgram = createProgram(gl, "tex-norm", "planet", "planet")
+  const programs = {}
+  function createProgram(gl, idVec, idFrag, name) {
+    return programs[name || idFrag || idVec] = WebGL.createProgramFromHTML(
+      gl,
+      "shader-vs-" + idVec,
+      "shader-fs-" + (idFrag || idVec),
+      name
+    )
+  }
+  function createPostProcessor(gl, idFrag, name) {
+    return programs[name || idFrag] = WebGL.createPostProcessorFromHTML(
+      gl, "shader-pp-" + idFrag, name
+    )
+  }
+  
+  var sunProgram = createProgram(gl, "tex-norm", "sun")
+  var earthProgram = createProgram(gl, "tex-norm", "earth")
+  var occlusionProgram = createProgram(gl, "passthrough", "occlusion")
+  var radialBlurProgram = createPostProcessor(gl, "radialBlur")
+  programs.terrestial = programs.earth
+  programs.gasGiant = programs.earth
+  
+  //{ Sun Program
+  // properties
+  sunProgram.usePointLight = false
+  // uniform functions
+  setupViewFunctions(sunProgram)
+  setupTextureFunction(sunProgram, "Color")
+  // per-object setup
+  sunProgram.prepare = function(planet) {
+      sunProgram.setModelView(planet.transform)
+      sunProgram.setColorTexture(planet.texture, 0)
+  }
+  //}
+  //{ Earth Program
+  // properties
+  earthProgram.usePointLight = true
+  earthProgram.useSpecular = true
+  // uniform functions
+  setupViewFunctions(earthProgram)
+  setupTextureFunction(earthProgram, "DayColor")
+  setupTextureFunction(earthProgram, "NightColor")
+  setupTextureFunction(earthProgram, "Specular")
+  setupTextureFunction(earthProgram, "Normal")
+  // per-object setup
+  const bufv3 = vec3.create()
+  const bufv4 = vec4.fromValues(0.0, 0.0, 0.0, 1.0)
+  earthProgram.prepare = function(planet) {
+    vec4.set(bufv4, 0, 0, 0, 1)
+    vec4.transformMat4(bufv4, bufv4, planet.transform)
+    vec3.copy(bufv3, bufv4)
+    earthProgram.setUniform("u_PlanetPosition", bufv3)
+    earthProgram.setModelViewWithNormals(planet.transform, planet.normalTransform)
+    earthProgram.setDayColorTexture(planet.texture, 0)
+    if (planet.nightTexture) {
+      earthProgram.setNightColorTexture(planet.nightTexture, 1)
+    }
+    if (planet.normalTexture) {
+      vec3.transformMat3(bufv3, up, planet.normalTransform)
+      earthProgram.setUniform("u_PlanetUp", bufv3)
+      earthProgram.setNormalTexture(planet.normalTexture, 3)
+    }
+    if (planet.specularTexture) {
+      earthProgram.setSpecularTexture(planet.specularTexture, 2)
+    }
+  }
+  //}
+  
   //{ Uniforms
-  setupViewFunctions(planetProgram)
   // static variables
-  const origin = vec4.fromValues(0.0, 0.0, 0.0, 1.0)
   const magenta = vec4.fromValues(1.0, 0.0, 1.0, 1.0)
   const white = vec3.fromValues(1.0, 1.0, 1.0)
   // Lighting
-  planetProgram.setAmbient = function(color) {
-    planetProgram.setUniform("u_AmbientColor", color)
-  }
-  planetProgram.setPointLight = function(position, color) {
-    if (position) planetProgram.setUniform("u_LightPosition", position)
-    if (color) planetProgram.setUniform("u_LightColor", color)
-  }
-  planetProgram.usePointLight = function() {
-    planetProgram.setUniform("u_UsePointLight", true)
-  }
-  planetProgram.useStaticLight = function(color) {
-    planetProgram.setUniform("u_UsePointLight", false)
-    planetProgram.setUniform("u_LightFallback", color || white)
-  }
-  // Color map
-  planetProgram.setTexture = function(texture, unit, fallback) {
-    var unitEnum = gl.__proto__["TEXTURE" + unit]
-    if (unitEnum && texture && texture.isLoaded) {
-      gl.activeTexture(unitEnum)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
-      planetProgram.setUniform("u_UseColorMap", true)
-      planetProgram.setUniform("u_ColorSampler", unit)
-    } else {
-      planetProgram.setUniform("u_UseColorMap", false)
-      planetProgram.setUniform("u_ColorFallback", fallback || magenta)
-    }
-  }
-  planetProgram.setNightTexture = function(texture, unit) {
-    var unitEnum = gl.__proto__["TEXTURE" + unit]
-    if (unitEnum && texture && texture.isLoaded) {
-      gl.activeTexture(unitEnum)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
-      planetProgram.setUniform("u_UseNightColorMap", true)
-      planetProgram.setUniform("u_NightColorSampler", unit)
-    } else {
-      planetProgram.setUniform("u_UseNightColorMap", false)
-    }
-  }
-  planetProgram.disableNightTexture = function() {
-    planetProgram.setUniform("u_UseNightColorMap", false)
+  earthProgram.setPointLight = function(position) {
+    earthProgram.setUniform("u_LightPosition", position)
   }
   // Bump map
   //! need to add bump map handling
   //}
   
-  var occlusionProgram = createProgram(gl, "passthrough", "occlusion")
   setupViewFunctions(occlusionProgram)
   occlusionProgram.frameBuffer = WebGL.createFrameBuffer(
     gl, gl.viewportWidth, gl.viewportHeight
   )
   //}
   
-  var radialBlurProgram = WebGL.createPostProcessorFromHTML(
-    gl, "shader-pp-radialBlur"
-  )
   /*var smoothBlurProgram = WebGL.createPostProcessorFromHTML(
     gl, "shader-pp-smoothBlur"
   )*/
@@ -497,38 +549,20 @@ function WebGLStart(canvasId) {
   }*/
   //}
   
-  var scene = createPlanetarium(
-    gl,
-    null,
-    planetProgram,
-    occlusionProgram,
-    null, //smoothBlurProgram,
-    radialBlurProgram
-  )
-  var modelView = WebGL.createMatrixStack()
-  planetProgram.use()
-  planetProgram.setAmbient([1, 1, 1])//[0.0, 0.0, 0.0])
-  occlusionProgram.use()
-  radialBlurProgram.use()
-  radialBlurProgram.setUniform("u_TextureSize", [gl.viewportWidth, gl.viewportHeight])
+  var scene = createPlanetarium(gl, programs)
+  //earthProgram.use()
+  //occlusionProgram.use()
+  radialBlurProgram.use().setUniform("u_TextureSize", [gl.viewportWidth, gl.viewportHeight])
   
   return {
-    draw: function(elapsed) {
+    draw: function(elapsed, mv) {
       // clear everything
       gl.clearColor(0.0, 0.0, 0.0, 1.0)
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
-      modelView.reset()
       
       // draw planets
-      scene.draw(elapsed, modelView)
-    }
-  }
-  } catch (e) {
-    if (e instanceof Error) {
-      alert(e.stack)
-    } else {
-      alert(e)
+      scene.draw(elapsed, mv)
     }
   }
 }

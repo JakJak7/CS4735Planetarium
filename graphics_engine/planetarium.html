@@ -41,155 +41,148 @@ varying vec2 v_TexCoord;
 
 uniform bool u_UseColorMap;
 uniform sampler2D u_ColorSampler;
-uniform vec4 u_ColorFallback;
 
-uniform vec3 u_AmbientColor;
+const vec4 fallback = vec4(1.0, 0.0, 1.0, 1.0);
 
 void main(void) {
-  vec3 
+  if (u_UseColorMap) {
+    gl_FragColor = texture2D(u_ColorSampler, v_TexCoord);
+  } else {
+    gl_FragColor = fallback;
+  }
 }
 </script>
-  <script id="shader-fs-planet" type="x-shader/x-fragment">
-#line 35
+  <script id="shader-fs-earth" type="x-shader/x-fragment">
+#line 57
 precision mediump float;
 
 varying vec3 v_Position;
 varying vec3 v_Normal;
 varying vec2 v_TexCoord;
 
-uniform bool u_UseColorMap;
-uniform sampler2D u_ColorSampler;
-uniform vec4 u_ColorFallback;
+uniform vec3 u_PlanetPosition;
+uniform vec3 u_PlanetUp;
 
+uniform bool u_UseDayColorMap;
 uniform bool u_UseNightColorMap;
-uniform sampler2D u_NightColorSampler;
-
-uniform bool u_UseBumpMap;
-uniform sampler2D u_BumpSampler;
-
+uniform bool u_UseNormalMap;
 uniform bool u_UseSpecularMap;
+
+uniform sampler2D u_DayColorSampler;
+uniform sampler2D u_NightColorSampler;
+uniform sampler2D u_NormalSampler;
 uniform sampler2D u_SpecularSampler;
 
-uniform vec3 u_AmbientColor;
-uniform bool u_UsePointLight;
 uniform vec3 u_LightPosition;
-uniform vec3 u_LightColor;
-uniform vec3 u_LightFallback;
 uniform vec3 u_EyePosition;
 
 const vec3 luminosityWeights = vec3(0.2126, 0.7152, 0.0722);
+const vec4 fallback = vec4(1.0, 0.0, 1.0, 1.0);
+
+const vec3 black = vec3(0.0, 0.0, 0.0);
 const vec3 white = vec3(1.0, 1.0, 1.0);
 
 void main(void) {
+  vec4 dayColor;
+  vec4 nightColor;
+  vec3 normalOffset;
+  float specularFactor;
+  
+  // texture samples
+  if (u_UseDayColorMap) dayColor = texture2D(u_DayColorSampler, v_TexCoord);
+  else dayColor = fallback;
+  if (u_UseNightColorMap) nightColor = texture2D(u_NightColorSampler, v_TexCoord);
+  else nightColor = dayColor * 0.2;
+  if (u_UseNormalMap) normalOffset = texture2D(u_NormalSampler, v_TexCoord).rgb * 2.0 - 1.0;
+  else normalOffset = vec3(0.0, 0.0, 1.0);
+  if (u_UseSpecularMap) specularFactor = texture2D(u_SpecularSampler, v_TexCoord).r;
+  else specularFactor = 1.0;
+  
+  // normal
   vec3 normal = normalize(v_Normal);
-  vec3 lightNormal = normalize(u_LightPosition - v_Position);
+  vec3 tangent = normalize(cross(normal, u_PlanetUp));
+  vec3 bitangent = normalize(cross(normal, tangent));
+  normal = normalize(-normalOffset.x * tangent + -normalOffset.y * bitangent + normalOffset.z * normal);
+  //gl_FragColor = vec4(abs(normal), 1.0);return;
+  
+  
+  // lights
+  vec3 diffuseLightNormal = normalize(u_LightPosition - u_PlanetPosition);
+  vec3 specularLightNormal = normalize(u_LightPosition - v_Position);
   vec3 eyeNormal = normalize(u_EyePosition - v_Position);
-  vec3 light = u_AmbientColor;
-  if (u_UsePointLight) {
-    float diffuse = max(0.0, dot(normal, lightNormal));
-    float specular = max(0.0, dot(normal, normalize(lightNormal + eyeNormal)));
-//    gl_FragColor = vec4(
-//      u_Color * u_Ambient +
-//      u_Color * u_Diffuse * nDotL +
-//      u_Color * u_Specular * pow(hDotL, 4.0);//uSpecularExponent),
-//      1.0
-//    );
-//    vec3 pointLightWeight = uLightColor;
-//    if (cosTheta >= 0.0) {
-//      pointLightWeight *= 1.0;
-//    } else if (cosTheta > -0.3) {
-//      pointLightWeight *= (cosTheta + 0.3) * (1.0 / 0.3);
-//    } else {
-//      pointLightWeight *= 0.0;
-//    }
-//    light = pointLightWeight * (white - light);
-    light += u_LightColor * (diffuse + pow(specular, 32.0));
-  } else {
-    light = u_LightFallback;
-  }
-  if (u_UseColorMap) {
-    float lightIntensity = dot(light.rgb, luminosityWeights);
-    if (!u_UseNightColorMap || lightIntensity > 0.0) {
-      vec4 dayColor = texture2D(u_ColorSampler, v_TexCoord);
-      gl_FragColor = vec4(dayColor.rgb * light, dayColor.a);
-    } else {
-      gl_FragColor = texture2D(u_NightColorSampler, v_TexCoord);
-    }
-    //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0) * vec4(light, 1.0);
-  } else {
-    gl_FragColor = vec4(
-      u_ColorFallback.rgb * light,
-      u_ColorFallback.a
-    );
-  }
+  vec3 ambient = black;
+  float diffuse = max(0.0, dot(normal, diffuseLightNormal));
+  float specular = max(0.0, dot(normal, normalize(specularLightNormal + eyeNormal)));
+  vec3 light = ambient + diffuse + pow(specular * specularFactor, 128.0);
+  
+  // color
+  gl_FragColor = vec4(
+    dayColor.rgb * light,
+    dayColor.a
+  );
 }
 </script>
   <script id="shader-fs-terrestial" type="x-shader/x-fragment">
-#line 35
+#line 126
 precision mediump float;
 
 varying vec3 v_Position;
 varying vec3 v_Normal;
 varying vec2 v_TexCoord;
 
+uniform vec3 u_PlanetPosition;
+uniform vec3 u_PlanetUp;
+
 uniform bool u_UseColorMap;
+uniform bool u_UseNormalMap;
+
 uniform sampler2D u_ColorSampler;
-uniform vec4 u_ColorFallback;
+uniform sampler2D u_NormalSampler;
 
-uniform bool u_UseBumpMap;
-uniform sampler2D u_BumpSampler;
-
-uniform vec3 u_AmbientColor;
-uniform bool u_UsePointLight;
 uniform vec3 u_LightPosition;
-uniform vec3 u_LightColor;
-uniform vec3 u_LightFallback;
+uniform vec3 u_EyePosition;
 
 const vec3 luminosityWeights = vec3(0.2126, 0.7152, 0.0722);
+const vec4 fallback = vec4(1.0, 0.0, 1.0, 1.0);
+
+const vec3 black = vec3(0.0, 0.0, 0.0);
 const vec3 white = vec3(1.0, 1.0, 1.0);
 
 void main(void) {
+  vec4 color;
+  vec3 normalOffset;
+  
+  // texture samples
+  if (u_UseColorMap) dayColor = texture2D(u_DayColorSampler, v_TexCoord);
+  else dayColor = fallback;
+  if (u_UseNightColorMap) nightColor = texture2D(u_NightColorSampler, v_TexCoord);
+  else nightColor = dayColor * 0.2;
+  if (u_UseNormalMap) normalOffset = texture2D(u_NormalSampler, v_TexCoord).rgb * 2.0 - 1.0;
+  else normalOffset = vec3(0.0, 0.0, 1.0);
+  if (u_UseSpecularMap) specularFactor = texture2D(u_SpecularSampler, v_TexCoord).r;
+  else specularFactor = 1.0;
+  
+  // normal
   vec3 normal = normalize(v_Normal);
+  vec3 tangent = normalize(cross(normal, u_PlanetUp));
+  vec3 bitangent = normalize(cross(normal, tangent));
+  normal = normalize(-normalOffset.x * tangent + -normalOffset.y * bitangent + normalOffset.z * normal);
+  //gl_FragColor = vec4(abs(normal), 1.0);return;
+  
+  
+  // lights
   vec3 lightNormal = normalize(u_LightPosition - v_Position);
   vec3 eyeNormal = normalize(u_EyePosition - v_Position);
-  vec3 light = u_AmbientColor;
-  if (u_UsePointLight) {
-    float diffuse = max(0.0, dot(normal, lightNormal));
-    float specular = max(0.0, dot(normal, normalize(lightNormal + eyeNormal)));
-//    gl_FragColor = vec4(
-//      u_Color * u_Ambient +
-//      u_Color * u_Diffuse * nDotL +
-//      u_Color * u_Specular * pow(hDotL, 4.0);//uSpecularExponent),
-//      1.0
-//    );
-//    vec3 pointLightWeight = uLightColor;
-//    if (cosTheta >= 0.0) {
-//      pointLightWeight *= 1.0;
-//    } else if (cosTheta > -0.3) {
-//      pointLightWeight *= (cosTheta + 0.3) * (1.0 / 0.3);
-//    } else {
-//      pointLightWeight *= 0.0;
-//    }
-//    light = pointLightWeight * (white - light);
-    light += u_LightColor * (diffuse + pow(specular, 32.0));
-  } else {
-    light = u_LightFallback;
-  }
-  if (u_UseColorMap) {
-    float lightIntensity = dot(light.rgb, luminosityWeights);
-    if (!u_UseNightColorMap || lightIntensity > 0.0) {
-      vec4 dayColor = texture2D(u_ColorSampler, v_TexCoord);
-      gl_FragColor = vec4(dayColor.rgb * light, dayColor.a);
-    } else {
-      gl_FragColor = texture2D(u_NightColorSampler, v_TexCoord);
-    }
-    //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0) * vec4(light, 1.0);
-  } else {
-    gl_FragColor = vec4(
-      u_ColorFallback.rgb * light,
-      u_ColorFallback.a
-    );
-  }
+  vec3 ambient = black;
+  float diffuse = max(0.0, dot(normal, lightNormal));
+  float specular = max(0.0, dot(normal, normalize(lightNormal + eyeNormal)));
+  vec3 light = ambient + diffuse + pow(specular * specularFactor, 128.0);
+  
+  // color
+  gl_FragColor = vec4(
+    dayColor.rgb * light,
+    dayColor.a
+  );
 }
 </script>
   <script id="shader-fs-gas-planet" type="x-shader/x-fragment">
@@ -371,7 +364,7 @@ void main() {
 </script>
 </head>
 
-<body onload="try { PlanetariumStart() } catch (e) { alert(e.stack) }">
+<body onload="PlanetariumStart()">
 
 <canvas id="planetarium-3dcanvas" style="border: none;" width="1250" height="500"></canvas>
 <div id="debug"></div>
@@ -385,10 +378,10 @@ void main() {
   <script type="text/javascript" src="ycl.WebGL.js"></script>
   <script type="text/javascript" src="planetarium.js"></script>
   <script type="text/javascript">
-try {
 function PlanetariumStart() {
-  const scene = WebGLStart('planetarium-3dcanvas', 'planetarium-2dcanvas')
+  const scene = WebGLStart('planetarium-3dcanvas')
   const debug = document.getElementById('debug')
+  const mv = mat4.create()
   
   var lastDelta = 0
   var deltas = []
@@ -399,22 +392,15 @@ function PlanetariumStart() {
     requestAnimFrame(tick)
     const timeNow = Date.now()
     const delta = timeNow - lastTime
-    scene.draw(delta)
+    scene.draw(delta, mv)
     lastTime = timeNow
     deltas[lastDelta++] = delta
-    if (lastDelta >= 200) lastDelta = 0
+    if (lastDelta >= 50) lastDelta = 0
     const average = deltas.reduce(function(sum, next) { return sum + next }, 0) / deltas.length
     debug.innerHTML =
       "FPS: " +
       (Math.round((10 * 1000) / average) / 10)
   }
-}
-} catch (e) {
-    if (e instanceof Error) {
-      alert(e.stack)
-    } else {
-      alert(e)
-    }
 }
 </script>
 
