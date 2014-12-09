@@ -250,13 +250,7 @@ function createPlanetarium(
         }
       }
       //viewpoint
-      shader.prepare(planet)
-      sphere.draw(
-        shader,
-        "a_Position",
-        "a_Normal",
-        "a_TexCoord"
-      )
+      shader.draw(planet, sphere)
     }
   }
   function occlude() {
@@ -472,9 +466,14 @@ function WebGLStart(canvasId) {
   setupViewFunctions(sunProgram)
   setupTextureFunction(sunProgram, "Color")
   // per-object setup
-  sunProgram.prepare = function(planet) {
-      sunProgram.setModelView(planet.transform)
-      sunProgram.setColorTexture(planet.texture, 0)
+  sunProgram.draw = function(planet, geometry) {
+    sunProgram.setModelView(planet.transform)
+    sunProgram.setColorTexture(planet.texture, 0)
+    geometry.draw(
+      shader,
+      "a_Position",
+      "a_TexCoord"
+    )
   }
   //}
   //{ Earth Program
@@ -490,7 +489,7 @@ function WebGLStart(canvasId) {
   // per-object setup
   const bufv3 = vec3.create()
   const bufv4 = vec4.fromValues(0.0, 0.0, 0.0, 1.0)
-  earthProgram.prepare = function(planet) {
+  earthProgram.draw = function(planet, geometry) {
     vec4.set(bufv4, 0, 0, 0, 1)
     vec4.transformMat4(bufv4, bufv4, planet.transform)
     vec3.copy(bufv3, bufv4)
@@ -508,6 +507,12 @@ function WebGLStart(canvasId) {
     if (planet.specularTexture) {
       earthProgram.setSpecularTexture(planet.specularTexture, 2)
     }
+    geometry.draw(
+      shader,
+      "a_Position",
+      "a_Normal",
+      "a_TexCoord"
+    )
   }
   //}
   
