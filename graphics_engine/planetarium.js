@@ -470,7 +470,7 @@ function WebGLStart(canvasId) {
     sunProgram.setModelView(planet.transform)
     sunProgram.setColorTexture(planet.texture, 0)
     geometry.draw(
-      shader,
+      sunProgram,
       "a_Position",
       "a_TexCoord"
     )
@@ -508,24 +508,12 @@ function WebGLStart(canvasId) {
       earthProgram.setSpecularTexture(planet.specularTexture, 2)
     }
     geometry.draw(
-      shader,
+      earthProgram,
       "a_Position",
       "a_Normal",
       "a_TexCoord"
     )
   }
-  //}
-  
-  //{ Uniforms
-  // static variables
-  const magenta = vec4.fromValues(1.0, 0.0, 1.0, 1.0)
-  const white = vec3.fromValues(1.0, 1.0, 1.0)
-  // Lighting
-  earthProgram.setPointLight = function(position) {
-    earthProgram.setUniform("u_LightPosition", position)
-  }
-  // Bump map
-  //! need to add bump map handling
   //}
   
   setupViewFunctions(occlusionProgram)
